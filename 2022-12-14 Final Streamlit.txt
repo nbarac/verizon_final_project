@@ -1,0 +1,295 @@
+## Import Packages
+
+## Test @
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import warnings
+from sklearn.model_selection import cross_val_score
+
+warnings.filterwarnings("ignore")
+from datetime import datetime
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+
+from sklearn.ensemble import RandomForestClassifier
+
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import log_loss
+from sklearn.metrics import roc_auc_score
+
+from sklearn import svm
+
+import streamlit as st
+
+## Pull Database
+
+df_orig = pd.read_csv('Verizon.csv')
+
+## Fix Database
+
+
+# age_low_cutoff = input("What is the lowe cutoff (eg anything below which)>")
+# age_high_cutoff = input("What is the high cutoff (eg anything above which)>")
+
+# Set up variables from test results
+age_low_cutoff = 15
+age_high_cutoff = 99
+test_size = .1
+unbalanced_balanced = "bal"
+model_winner = "RF"
+## Set up Multiple Databases
+
+
+# Change age below x and above y to mean age,
+age_mean = int(df_orig['age'].mean())
+age_change_df = df_orig.copy()
+age_change_df.loc[age_change_df["age"] < int(age_low_cutoff), "age"] = int(age_mean)
+age_change_df.loc[age_change_df["age"] == int(age_high_cutoff), "age"] = int(age_mean)
+age_change_df.groupby('age')["year"].count().head(20)
+
+## Create Model
+
+import math
+
+
+def round_up_to_nearest_100(num):
+    return math.floor(num / 100)
+
+
+def logistic_regression_def (X_train_scaled, y_train, X_test_scaled, y_test, bal_or_unbal, db_name, test_size_internal):
+
+    lr = LogisticRegression(random_state=42)
+    lr.fit(X_train_scaled, y_train)
+    y_pred_lr = lr.predict(X_test_scaled)
+
+    conf_matrix_lr = confusion_matrix(y_test, y_pred_lr)
+    class_report_lr = classification_report(y_test, y_pred_lr)
+
+    return lr, y_pred_lr
+
+def random_forest_def(X_int, X_train, X_test, y_train, y_test, bal_or_unbal, db_name, test_size_internal):
+
+    rf = RandomForestClassifier(random_state=42)
+    rf.fit(X_train, y_train)
+    y_pred_rf = rf.predict(X_test)
+
+    conf_matrix_rf = confusion_matrix(y_test, y_pred_rf)
+    class_report_rf = classification_report(y_test, y_pred_rf)
+
+    return rf, y_pred_rf
+
+def knn_def(X_train, X_test, y_train, y_test, bal_or_unbal, db_name, test_size_internal):
+    test = "KNN"
+
+    knn = KNeighborsClassifier(3)
+    knn.fit(X_train,y_train)
+
+    knn_hat=knn.predict(X_test)
+
+    predict_df_knn=pd.DataFrame(knn_hat,columns=['yhat'])
+    predict_df_knn["y"]=y_test.values
+    predict_df_knn.head()
+
+    conf_matrix_knn = confusion_matrix(y_test.values,knn_hat)
+    class_report_knn = classification_report(y_test.values,knn_hat)
+
+    return knn, knn_hat
+
+def svm_def(X_train, X_test, y_train, y_test, bal_or_unbal, db_name, test_size_internal):
+
+
+    clf = svm.SVC(kernel='rbf', C=10, gamma=0.01)
+    clf.fit(X_train, y_train)
+    svm_hat = clf.predict(X_test)
+
+    predict_df_svm = pd.DataFrame(svm_hat, columns=['yhat'])
+    predict_df_svm["y"] = y_test.values
+    predict_df_svm.head()
+
+    conf_matrix_svm = confusion_matrix(y_test.values, svm_hat)
+    print(conf_matrix_svm)
+
+    class_report_svm = classification_report(y_test.values, svm_hat)
+    print(class_report_svm)
+
+    return clf, svm_hat
+
+
+@st.cache(suppress_st_warning=True, allow_output_mutation=True)
+def create_train_set(df, df_name_int, bal_or_unbal, test_size_internal, model_winner_int):
+    X = df.drop(columns=['default', 'year', 'month', 'day', 'monthdue', 'gender'])
+    y = df['default']
+
+    # if bal_or_unbal == "bal":
+    #
+    #     from imblearn.over_sampling import SMOTE
+    #     sm=SMOTE(random_state=42)
+    #     x_res, y_res=sm.fit_resample(X,y)
+    #
+    #     X_internal = x_res
+    #     y_internal = y_res
+
+    if bal_or_unbal == "bal":
+        from imblearn.over_sampling import SMOTE
+        sm = SMOTE(random_state=42)
+        x_res, y_res = sm.fit_resample(X, y)
+
+        X_balanced = x_res
+        y_balanced = y_res
+
+        X_train_b, X_test_b, y_train_b, y_test_b = train_test_split(X_balanced, y_balanced,
+                                                                    test_size=test_size_internal, random_state=42)
+
+        scaler = StandardScaler()
+        scaler.fit(X_train_b)
+        X_train_b_scaled = scaler.transform(X_train_b)
+        X_test_b_scaled = scaler.transform(X_test_b)
+
+    # else:
+    #     X_internal = X
+    #     y_internal = y
+
+    X_internal = X
+    y_internal = y
+
+    # Random state to reproduce results
+    X_train, X_test, y_train, y_test = train_test_split(X_internal, y_internal, test_size=test_size_internal,
+                                                        random_state=42)
+    # X_train_b, X_test_b, y_train_b, y_test_b = train_test_split(X_balanced, y_balanced, test_size=test_size_internal, random_state=42)
+
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size_internal, random_state=42)
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+    # The feature standardization is only use in linear regression in the original Verizon
+    scaler = StandardScaler()
+    scaler.fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    if bal_or_unbal == "unbal":
+
+        if model_winner == "LR":
+            clf_return, predict_return = logistic_regression_def(X_train_scaled, y_train, X_test_scaled, y_test,
+                                                             bal_or_unbal, df_name_int, test_size_internal)
+        elif model_winner == "RF":
+            clf_return, predict_return = random_forest_def(X, X_train, X_test, y_train, y_test, bal_or_unbal, df_name_int,
+                                                       test_size_internal)
+        elif model_winner == "KNN":
+            clf_return, predict_return = knn_def(X_train, X_test, y_train, y_test, bal_or_unbal, df_name_int,
+                                             test_size_internal)
+        elif model_winner == "SVM":
+            clf_return, predict_return = svm_def(X_train, X_test, y_train, y_test, bal_or_unbal, df_name_int,
+                                             test_size_internal)
+        else:
+            clf_return, predict_return = svm_def(X_train, X_test, y_train, y_test, bal_or_unbal, df_name_int,
+                                             test_size_internal)
+
+    elif bal_or_unbal == "bal":
+
+        if model_winner == "LR":
+            clf_return, predict_return = logistic_regression_def(X_train_b_scaled, y_train_b, X_test_scaled, y_test,
+                                                                 bal_or_unbal, df_name_int, test_size_internal)
+            st.write("""LR""")
+
+        elif model_winner == "RF":
+            clf_return, predict_return = random_forest_def(X, X_train_b, X_test, y_train_b, y_test, bal_or_unbal, df_name_int,
+                                                           test_size_internal)
+            st.write("""RF""")
+
+        elif model_winner == "KNN":
+            clf_return, predict_return = knn_def(X_train_b, X_test, y_train_b, y_test, bal_or_unbal, df_name_int,
+                                         test_size_internal)
+        else:
+            clf_return, predict_return = svm_def(X_train_b, X_test, y_train_b, y_test, bal_or_unbal, df_name_int,
+                                         test_size_internal)
+            st.write("""SVM""")
+
+    return X, clf_return, predict_return
+
+df_minus_default, clf_use, svm_hat_use = create_train_set(age_change_df, "age_change", unbalanced_balanced, test_size, model_winner)
+
+## Display
+
+st.image("vbar.jpg")
+st.write("""Verizon Test Score""")
+
+# Obtain Variables
+
+with st.form(key="Form"):
+
+    name = st.text_input(label="What is the customer's name?")
+    contract_price = st.slider('What is the total contract price (in dollars)?', 0, 5000, 449)
+    down_payment = st.slider("What is the amount (in dollars) of the customer's downpayment (if none, use $0)?", 0,
+                             2000, 19)
+    contract_months = st.slider('How many months will the contract be?', 0, 60, 5)
+    payment_left = contract_price - down_payment
+
+    calc_or_special_monthly = st.radio("Calculate Monthly Payment or Special with Ballon?",
+                                       ('Calculate', 'Special', 'Test'))
+    special_if_applicable = st.slider("If applicable, what is the special monthly payment?", 0, 900, 0)
+
+    if calc_or_special_monthly == "Calculate":
+        monthly_payment = (payment_left + contract_months // 2) // contract_months
+
+    elif calc_or_special_monthly == "Special":
+        monthly_payment = special_if_applicable
+
+    else:
+        monthly_payment = 100
+
+    cred_score_cust = st.slider("What is the customer credit score?", 0, 900, 0)
+    cred_score_cust = round_up_to_nearest_100(cred_score_cust)
+    # st.write(f'CS {cred_score_cust}')
+
+    age_of_customer = st.slider("Please provide the customer's age:", 0, 130, 35)
+    #gender = st.radio("What is the customer's gender",
+    #                  ('Male', 'Female'))
+
+    frm_pay = st.radio("What form of payment will be used",
+                       ('Credit', 'Gift Card', 'Debit', 'Cash'))
+    submit_button = st.form_submit_button(label='Submit')
+
+if submit_button:
+
+    # if frm_pay == "Credit": pmt_type_value =1
+
+    pmt_types_dict = {"Credit": 1, "Gift Card": 3, "Debit": 4, "Cash": 5}
+    pmt_type_value = int(pmt_types_dict.get(frm_pay))
+    # st.write (f'Type {pmt_type_value}')
+    # st.write (f'Monthly Payment {monthly_payment}')
+    # if gender == "Female":
+    #     gender_type = 2
+    # else:
+    #     gender_type = 1
+
+    input_predict_data = [
+        [contract_price, down_payment, payment_left, monthly_payment, pmt_type_value, cred_score_cust, age_of_customer]]
+
+    app_or_rej = clf_use.predict(input_predict_data)
+    st.write(f'Score {app_or_rej}')
+    st.write(f'{name}')
+    if app_or_rej[0] == 1:
+        st.write(f'You should reject {name}')
+
+    else:
+        st.write(f'Welcome ' + name + ' to Verizon!')
+
+with st.form(key="ModelRun"):
+
+    submit_model_build = st.form_submit_button(label='Press to Specify the Model (Not Active)')
+
+if submit_model_build:
+    # model_winner = st.radio("Model",
+    #                         ('Same','LR', 'RF', 'KNN', 'SVM'))
+    # df_minus_default, clf_use, svm_hat_use = create_train_set(age_change_df, "age_change", unbalanced_balanced,
+    #                                                           test_size, model_winner)
+    st.write(f'Model',model_winner)
